@@ -16,8 +16,8 @@ com os dados próprios da instituição, orquestrado com LangChain/LangGraph.
 | Integrante | Frente |
 |---|---|
 | Vinicius | Frente 1 — Fine-tuning da LLM (esta parte) |
-| Natalia | Frente 2 — Dados (dataset de fine-tuning + base de prontuários) |
-| Rodrigo | Frente 3 — LangChain / LangGraph |
+| Thamy | Frente 2 — Dados (dataset de fine-tuning + base de prontuários) |
+| Paola | Frente 3 — LangChain / LangGraph |
 | Paola | Relatório técnico, diagrama, validação |
 | Thamy | Vídeo e evidências |
 
