@@ -1,0 +1,30 @@
+# Configuração do fine-tuning — Frente 1 (Vinicius)
+# Dimensionado para RTX 3070 (8 GB VRAM) com Llama 3.2 3B em 4-bit.
+
+model:
+  base_model: "unsloth/Llama-3.2-3B-Instruct"   # Unsloth baixa a versão bnb-4bit
+  max_seq_length: 1024                            # 3B na 3070 aguenta 1024 com folga
+  load_in_4bit: true
+
+lora:
+  r: 16
+  lora_alpha: 16
+  lora_dropout: 0.0
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+training:
+  train_file: "data/processed/train.jsonl"
+  eval_holdout: 0.1                # fração separada para validação
+  num_train_epochs: 3
+  per_device_train_batch_size: 2   # na 3070; suba para 4 se sobrar VRAM
+  gradient_accumulation_steps: 8   # batch efetivo = 16
+  learning_rate: 2.0e-4
+  warmup_ratio: 0.05
+  lr_scheduler_type: "cosine"
+  weight_decay: 0.01
+  logging_steps: 5
+  seed: 42
+
+output:
+  adapter_dir: "models/lora-llama32-3b-medico"
+  merged_dir: "models/merged-llama32-3b-medico"   # usado só com --merge / --export-gguf

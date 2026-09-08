@@ -1,0 +1,5 @@
+# Frente 2 — Dados (roda em qualquer máquina, sem GPU)
+pandas>=2.0
+sqlalchemy>=2.0
+pymysql>=1.1
+cryptography>=42.0   # exigido pelo PyMySQL para autenticação caching_sha2 do MySQL 8

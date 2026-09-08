@@ -1,0 +1,24 @@
+# Ambientes
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+
+# Modelos e artefatos pesados
+models/
+*.gguf
+*.safetensors
+*.bin
+unsloth_compiled_cache/
+
+# Saídas locais
+logs/*.jsonl
+results/
+data/prontuarios/*.db
+
+# IDE / SO
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

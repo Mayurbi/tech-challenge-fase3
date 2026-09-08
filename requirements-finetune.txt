@@ -1,0 +1,9 @@
+# Frente 1 — Fine-tuning (rodar dentro do WSL2 com GPU NVIDIA)
+# Unsloth instala/pinna torch, transformers, peft, trl e bitsandbytes compatíveis.
+unsloth
+datasets>=2.19
+pyyaml>=6.0
+pandas>=2.0
+
+# Avaliação
+rouge-score>=0.1.2
