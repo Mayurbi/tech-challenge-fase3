@@ -7,6 +7,7 @@ from typing import Any
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnableLambda
 
+from src.assistant.grounding import build_verified_facts
 from src.assistant.ollama_llm import OllamaMedicalLLM
 from src.assistant.prontuario_repository import (
     ProntuarioRepository,
@@ -19,43 +20,87 @@ from src.finetune.inference import audit_log
 
 CONTEXT_PROMPT = PromptTemplate.from_template(
     """
-Responda à pergunta clínica abaixo utilizando SOMENTE as
-informações do prontuário e os protocolos internos recuperados.
+Você é um assistente de apoio clínico para oncologia,
+especializado em fornecer informações baseadas em protocolos
+internos e fatos verificados do prontuário do paciente.
 
-Não invente dados ausentes.
+Responda usando SOMENTE os fatos verificados e os protocolos
+fornecidos abaixo.
 
-Caso a informação não seja suficiente, informe explicitamente
-que não há dados suficientes.
+Os FATOS VERIFICADOS foram obtidos diretamente do banco de dados
+e possuem prioridade sobre qualquer interpretação do modelo.
 
-Toda decisão clínica final depende da validação do médico responsável.
+REGRAS OBRIGATÓRIAS:
+
+1. Não invente dados.
+2. Não transforme um alerta em exame.
+3. Não classifique exame realizado como pendente.
+4. Não diga que determinado exame está pendente há mais de
+30 dias se essa identificação não estiver explícita nos fatos.
+5. Se existir alerta de exame pendente há mais de 30 dias,
+informe obrigatoriamente:
+- a prioridade do alerta;
+- o código do protocolo associado;
+- a quantidade de exames mencionada no alerta;
+- e, se o alerta não identificar qual exame originou a condição,
+     escreva explicitamente:
+     "Os dados disponíveis não identificam qual exame pendente
+     originou especificamente este alerta."
+6. Cite os códigos dos protocolos utilizados.
+7. Não forneça diagnóstico definitivo.
+8. Não forneça prescrição médica autônoma.
+9. Caso exista informação insuficiente, explique exatamente
+qual informação está ausente.
+10. A decisão clínica final pertence ao médico responsável.
+11. Responda todas as partes da pergunta do usuário.
+12. Não cite protocolos irrelevantes apenas porque foram
+    recuperados pelo sistema.
 
 PERGUNTA:
 {question}
 
-DADOS DO PRONTUÁRIO:
+FATOS VERIFICADOS:
+{verified_facts}
+
+PRONTUÁRIO COMPLETO:
 {patient_context}
 
 PROTOCOLOS INTERNOS RECUPERADOS:
 {protocol_context}
 
-FONTES DISPONÍVEIS:
+FONTES:
 {sources}
 
-Responda em português do Brasil.
+INSTRUÇÕES ESPECÍFICAS:
 
-Utilize apenas as informações presentes no contexto fornecido.
+Quando a pergunta envolver exames pendentes:
 
-Cite explicitamente os códigos dos protocolos utilizados,
-como PROT-ONCO-001.
+1. Informe primeiro, de forma objetiva, somente os exames
+   marcados como pendentes nos FATOS VERIFICADOS.
 
-Não forneça diagnóstico definitivo ou prescrição médica autônoma.
+2. Informe qual protocolo está associado a esses exames.
+
+3. Explique objetivamente o que esse protocolo determina
+   para a situação apresentada.
+
+4. Se houver alerta registrado, informe o alerta em uma seção
+   separada. Nunca trate um alerta como exame.
+
+5. Se o alerta informar que existe exame pendente há mais de
+   30 dias, mas não identificar qual exame, deixe isso explícito.
+
+6. Não omita nenhuma parte da pergunta.
+
+Responda em português do Brasil, de forma clara, objetiva e
+baseada exclusivamente nas informações fornecidas.
 """.strip()
 )
 
 
 class MedicalAssistantChain:
     """
-    Pipeline LangChain principal da Frente 3.
+    Pipeline LangChain principal.
+    Responsável: Paola
     """
 
     def __init__(
@@ -98,10 +143,6 @@ class MedicalAssistantChain:
         self,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Etapa de retrieval do LangChain.
-        """
-
         question = str(
             payload.get("question", "")
         ).strip()
@@ -146,6 +187,13 @@ class MedicalAssistantChain:
             )
         )
 
+        verified_facts = (
+            build_verified_facts(
+                self.prontuario_repository,
+                paciente_id,
+            )
+        )
+
         result = {
             "question": question,
             "paciente_id": paciente_id,
@@ -153,6 +201,7 @@ class MedicalAssistantChain:
             "protocol_context": protocol_context,
             "sources": sources,
             "model_name": self.model_name,
+            "verified_facts": verified_facts,
         }
 
         audit_log(
@@ -163,6 +212,8 @@ class MedicalAssistantChain:
                 "paciente_id": paciente_id,
                 "pergunta": question,
                 "fontes_recuperadas": sources,
+                "fatos_verificados": (verified_facts
+                                    ),
             }
         )
 
@@ -172,13 +223,16 @@ class MedicalAssistantChain:
         self,
         context: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Gera a resposta final usando o
-        contexto recuperado.
-        """
+        verified_facts = context[
+            "verified_facts"
+        ]
+
 
         prompt = CONTEXT_PROMPT.format(
             question=context["question"],
+            verified_facts=(
+                verified_facts["summary"]
+            ),
             patient_context=(
                 context[
                     "patient_context"
@@ -206,8 +260,6 @@ class MedicalAssistantChain:
                 f"{context['paciente_id'] or 'não informado'}\n"
                 "Fontes recuperadas: "
                 f"{', '.join(context['sources']) or 'nenhuma'}\n\n"
-                "A geração da resposta pela LLM "
-                "foi desativada neste teste."
             )
 
         else:
@@ -232,6 +284,8 @@ class MedicalAssistantChain:
                 "fontes_recuperadas": (
                     context["sources"]
                 ),
+                "fatos_verificados": (
+                    verified_facts),
                 "resposta": answer,
             }
         )
@@ -247,9 +301,6 @@ class MedicalAssistantChain:
         question: str,
         paciente_id: str | None = None,
     ) -> dict[str, Any]:
-        """
-        Executa o pipeline LangChain.
-        """
 
         return self.chain.invoke(
             {
@@ -286,10 +337,6 @@ def main() -> None:
     parser.add_argument(
         "--offline",
         action="store_true",
-        help=(
-            "Testa retrieval e banco "
-            "sem executar a LLM."
-        ),
     )
 
     parser.add_argument(

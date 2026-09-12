@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from src.assistant.grounding import build_verified_facts
 from src.assistant.chain import CONTEXT_PROMPT
 from src.assistant.ollama_llm import OllamaMedicalLLM
 from src.assistant.prontuario_repository import (
@@ -18,6 +19,7 @@ from src.graph.state import MedicalAssistantState
 class MedicalGraphNodes:
     """
     Implementação dos nós utilizados pelo LangGraph.
+    Responsável: Paola
     """
 
     def __init__(
@@ -27,25 +29,15 @@ class MedicalGraphNodes:
         interactive_review: bool = False,
     ) -> None:
         self.offline = offline
-        self.interactive_review = (
-            interactive_review
+        self.interactive_review = interactive_review
+
+        self.model_name = "offline" if offline else model_name
+
+        self.protocol_retriever = ProtocolRetriever(
+            k=3,
         )
 
-        self.model_name = (
-            "offline"
-            if offline
-            else model_name
-        )
-
-        self.protocol_retriever = (
-            ProtocolRetriever(
-                k=3,
-            )
-        )
-
-        self.prontuario_repository = (
-            ProntuarioRepository()
-        )
+        self.prontuario_repository = ProntuarioRepository()
 
         self.llm: OllamaMedicalLLM | None = None
 
@@ -66,20 +58,13 @@ class MedicalGraphNodes:
         ).strip()
 
         if not question:
-            raise ValueError(
-                "A pergunta clínica "
-                "não pode ser vazia."
-            )
+            raise ValueError("A pergunta clínica " "não pode ser vazia.")
 
-        paciente_id = state.get(
-            "paciente_id"
-        )
+        paciente_id = state.get("paciente_id")
 
         audit_log(
             {
-                "etapa": (
-                    "langgraph_validate_input"
-                ),
+                "etapa": ("langgraph_validate_input"),
                 "paciente_id": paciente_id,
                 "pergunta": question,
             }
@@ -96,30 +81,28 @@ class MedicalGraphNodes:
         self,
         state: MedicalAssistantState,
     ) -> dict[str, Any]:
-        paciente_id = state.get(
-            "paciente_id"
-        )
+        """
+        Consulta prontuário e extrai fatos clínicos
+        verificados diretamente do banco.
 
-        patient_context = (
-            self.prontuario_repository
-            .build_context(
-                paciente_id
-            )
-        )
+        """
+        paciente_id = state.get("paciente_id")
+
+        patient_context = self.prontuario_repository.build_context(paciente_id)
+
+        verified_facts = build_verified_facts(self.prontuario_repository, paciente_id)
 
         audit_log(
             {
-                "etapa": (
-                    "langgraph_patient_context"
-                ),
+                "etapa": ("langgraph_patient_context"),
                 "paciente_id": paciente_id,
+                "fatos_verificados": (verified_facts),
             }
         )
 
         return {
-            "patient_context": (
-                patient_context
-            ),
+            "patient_context": (patient_context),
+            "verified_facts": verified_facts,
             "status": "PATIENT_LOADED",
         }
 
@@ -129,20 +112,9 @@ class MedicalGraphNodes:
     ) -> dict[str, Any]:
         question = state["question"]
 
-        documents = (
-            self.protocol_retriever.search(
-                question
-            )
-        )
+        documents = self.protocol_retriever.search(question)
 
-        sources = sorted(
-            {
-                str(
-                    document.metadata["id"]
-                )
-                for document in documents
-            }
-        )
+        sources = sorted({str(document.metadata["id"]) for document in documents})
 
         protocol_context = "\n\n".join(
             (
@@ -155,37 +127,45 @@ class MedicalGraphNodes:
 
         audit_log(
             {
-                "etapa": (
-                    "langgraph_protocol_retrieval"
-                ),
-                "paciente_id": state.get(
-                    "paciente_id"
-                ),
+                "etapa": ("langgraph_protocol_retrieval"),
+                "paciente_id": state.get("paciente_id"),
                 "fontes_recuperadas": sources,
             }
         )
 
         return {
-            "protocol_context": (
-                protocol_context
-            ),
+            "protocol_context": (protocol_context),
             "sources": sources,
-            "status": (
-                "PROTOCOLS_RETRIEVED"
-            ),
+            "status": ("PROTOCOLS_RETRIEVED"),
         }
 
     def build_prompt(
         self,
         state: MedicalAssistantState,
     ) -> dict[str, Any]:
+        """
+        Monta o prompt usando fatos verificados,
+        prontuário e protocolos recuperados.
+        """
+
         sources = state.get(
             "sources",
             [],
         )
 
+        verified_facts = state.get(
+            "verified_facts",
+            {},
+        )
+
+        verified_summary = verified_facts.get(
+            "summary",
+            "Nenhum fato clínico verificado disponível.",
+        )
+
         prompt = CONTEXT_PROMPT.format(
             question=state["question"],
+            verified_facts=verified_summary,
             patient_context=state.get(
                 "patient_context",
                 "Nenhum prontuário disponível.",
@@ -194,22 +174,15 @@ class MedicalGraphNodes:
                 "protocol_context",
                 "Nenhum protocolo recuperado.",
             ),
-            sources=(
-                ", ".join(sources)
-                if sources
-                else "Nenhuma fonte recuperada"
-            ),
+            sources=(", ".join(sources) if sources else "Nenhuma fonte recuperada"),
         )
 
         audit_log(
             {
-                "etapa": (
-                    "langgraph_build_prompt"
-                ),
-                "paciente_id": state.get(
-                    "paciente_id"
-                ),
+                "etapa": "langgraph_build_prompt",
+                "paciente_id": state.get("paciente_id"),
                 "fontes": sources,
+                "fatos_verificados": verified_facts,
             }
         )
 
@@ -242,22 +215,14 @@ class MedicalGraphNodes:
 
         else:
             if self.llm is None:
-                raise RuntimeError(
-                    "LLM não inicializada."
-                )
+                raise RuntimeError("LLM não inicializada.")
 
-            answer = self.llm.invoke(
-                state["prompt"]
-            )
+            answer = self.llm.invoke(state["prompt"])
 
         audit_log(
             {
-                "etapa": (
-                    "langgraph_generate_answer"
-                ),
-                "paciente_id": state.get(
-                    "paciente_id"
-                ),
+                "etapa": ("langgraph_generate_answer"),
+                "paciente_id": state.get("paciente_id"),
                 "modelo": self.model_name,
                 "resposta": answer,
             }
@@ -267,6 +232,323 @@ class MedicalGraphNodes:
             "answer": answer,
             "model_name": self.model_name,
             "status": "ANSWER_GENERATED",
+        }
+
+    def apply_grounding_guardrail(
+        self,
+        state: MedicalAssistantState,
+    ) -> dict[str, Any]:
+        """
+        Garante que informações críticas verificadas
+        no banco não sejam omitidas pela LLM.
+        """
+
+        answer = str(
+            state.get(
+                "answer",
+                "",
+            )
+        ).strip()
+
+        verified_facts = state.get(
+            "verified_facts",
+            {},
+        )
+
+        # Se o paciente não existe no banco,
+        # não permitimos que a LLM invente
+        # exames, alertas ou dados clínicos.
+        if not verified_facts.get(
+            "patient_found",
+            False,
+        ):
+            paciente_id = str(
+                state.get(
+                    "paciente_id",
+                    "",
+                )
+            )
+
+            safe_answer = (
+                f"Paciente {paciente_id} não encontrado "
+                "na base de prontuários.\n\n"
+                "Não é possível informar exames pendentes, "
+                "alertas ou condutas clínicas para este paciente "
+                "porque não existem dados de prontuário associados "
+                "ao identificador informado."
+            )
+
+            audit_log(
+                {
+                    "etapa": (
+                        "langgraph_patient_not_found_guardrail"
+                    ),
+                    "paciente_id": paciente_id,
+                    "patient_found": False,
+                }
+            )
+
+            return {
+                "answer": safe_answer,
+                "status": "GROUNDING_GUARDRAIL_APPLIED",
+            }
+
+        answer_lower = answer.lower()
+
+        answer_mentions_alert = (
+            "alerta" in answer_lower
+            or "prot-onco-005" in answer_lower
+            or "mais de 30 dias" in answer_lower
+        )
+
+        alerts = verified_facts.get(
+            "alerts",
+            [],
+        )
+
+        for alert in alerts:
+            detail = str(
+                alert.get(
+                    "detalhe",
+                    "",
+                )
+            ).lower()
+
+            if (
+                "mais de 30 dias" not in detail
+                or not answer_mentions_alert
+            ):
+                continue
+
+            warning_fragments = [
+                "não identificam qual exame pendente originou",
+                "não identifica qual exame pendente originou",
+                "não é possível identificar qual exame",
+            ]
+
+            warning_already_present = any(
+                fragment in answer.lower()
+                for fragment in warning_fragments
+            )
+
+            if not warning_already_present:
+                answer += (
+                    "\n\n**Observação de segurança:**\n"
+                    "Os dados disponíveis não identificam "
+                    "qual exame pendente originou "
+                    "especificamente este alerta."
+                )
+
+        audit_log(
+            {
+                "etapa": (
+                    "langgraph_grounding_guardrail"
+                ),
+                "paciente_id": state.get(
+                    "paciente_id"
+                ),
+                "resposta_ajustada": answer,
+            }
+        )
+
+        return {
+            "answer": answer,
+            "status": "GROUNDING_GUARDRAIL_APPLIED",
+        }
+
+    def validate_grounding(
+        self,
+        state: MedicalAssistantState,
+    ) -> dict[str, Any]:
+        """
+        Compara a resposta da LLM com os fatos
+        verificados diretamente no banco.
+        """
+
+        answer = str(
+            state.get(
+                "answer",
+                "",
+            )
+        ).lower()
+
+        question = str(
+            state.get(
+                "question",
+                "",
+            )
+        ).lower()
+
+        asks_about_pending_exams = (
+            "exame" in question
+            and (
+                "pendente" in question
+                or "pendência" in question
+            )
+        )
+
+        asks_about_alerts = (
+            "alerta" in question
+            or "alertas" in question
+        )
+
+        verified_facts = state.get(
+            "verified_facts",
+            {},
+        )
+
+        pending_exams = verified_facts.get(
+            "pending_exams",
+            [],
+        )
+
+        alerts = verified_facts.get(
+            "alerts",
+            [],
+        )
+
+        issues: list[str] = []
+
+        # 1. Todos os exames realmente pendentes
+        # precisam aparecer na resposta.
+        if asks_about_pending_exams:
+            for exam in pending_exams:
+                exam_name = str(
+                    exam.get(
+                        "exame",
+                        "",
+                    )
+                ).strip()
+
+                if (
+                    exam_name
+                    and exam_name.lower() not in answer
+                ):
+                    issues.append(
+                        f"exame_pendente_omitido:{exam_name}"
+                    )
+
+        # 2. Valida os protocolos dos exames,
+        # sem repetir o mesmo protocolo.
+        if asks_about_pending_exams:
+            exam_protocols = {
+                str(
+                    exam.get(
+                        "protocolo",
+                        "",
+                    )
+                ).strip()
+                for exam in pending_exams
+                if exam.get("protocolo")
+            }
+
+            for protocol in exam_protocols:
+                if protocol.lower() not in answer:
+                    issues.append(
+                        f"protocolo_exame_omitido:{protocol}"
+                    )
+
+        # 3. Validação dos alertas existentes.
+        if asks_about_alerts:
+            for alert in alerts:
+                protocol = str(
+                    alert.get(
+                        "protocolo",
+                        "",
+                    )
+                ).strip()
+
+                priority = str(
+                    alert.get(
+                        "prioridade",
+                        "",
+                    )
+                ).strip()
+
+                detail = str(
+                    alert.get(
+                        "detalhe",
+                        "",
+                    )
+                ).lower()
+
+                if (
+                    protocol
+                    and protocol.lower() not in answer
+                ):
+                    issues.append(
+                        f"protocolo_alerta_omitido:{protocol}"
+                    )
+
+                if (
+                    priority
+                    and priority.lower() not in answer
+                ):
+                    issues.append(
+                        f"prioridade_alerta_omitida:{priority}"
+                    )
+
+                # Se o alerta fala em mais de 30 dias,
+                # a resposta precisa deixar claro que
+                # não sabemos qual exame originou o alerta.
+                if "mais de 30 dias" in detail:
+                    warning_fragments = [
+                        (
+                            "não identificam qual exame "
+                            "pendente originou"
+                        ),
+                        (
+                            "não identifica qual exame "
+                            "pendente originou"
+                        ),
+                        (
+                            "não é possível identificar "
+                            "qual exame"
+                        ),
+                    ]
+
+                    warning_found = any(
+                        fragment in answer
+                        for fragment in warning_fragments
+                    )
+
+                    if not warning_found:
+                        issues.append(
+                            "alerta_30d_sem_ressalva"
+                        )
+
+        # Remove duplicações preservando a ordem.
+        issues = list(
+            dict.fromkeys(
+                issues
+            )
+        )
+
+        response_consistent = (
+            len(issues) == 0
+        )
+
+        audit_log(
+            {
+                "etapa": (
+                    "langgraph_grounding_validation"
+                ),
+                "paciente_id": state.get(
+                    "paciente_id"
+                ),
+                "response_consistent": (
+                    response_consistent
+                ),
+                "consistency_issues": issues,
+            }
+        )
+
+        return {
+            "response_consistent": (
+                response_consistent
+            ),
+            "consistency_issues": issues,
+            "status": "GROUNDING_VALIDATED",
         }
 
     def safety_check(
@@ -296,19 +578,9 @@ class MedicalGraphNodes:
 
         question_rules = {
             "prescricao": (
-                r"\b("
-                r"prescrev\w*|"
-                r"prescriç\w*|"
-                r"prescric\w*"
-                r")\b"
+                r"\b(" r"prescrev\w*|" r"prescriç\w*|" r"prescric\w*" r")\b"
             ),
-            "dosagem": (
-                r"\b("
-                r"dose|"
-                r"doses|"
-                r"dosagem"
-                r")\b"
-            ),
+            "dosagem": (r"\b(" r"dose|" r"doses|" r"dosagem" r")\b"),
             "alteracao_medicamento": (
                 r"\b("
                 r"suspender|"
@@ -328,61 +600,46 @@ class MedicalGraphNodes:
 
         reasons: list[str] = []
 
-        for reason, pattern in (
-            question_rules.items()
-        ):
+        for reason, pattern in question_rules.items():
             if re.search(
                 pattern,
                 question,
                 flags=re.IGNORECASE,
             ):
-                reasons.append(
-                    reason
-                )
+                reasons.append(reason)
 
-        concrete_dose_pattern = (
-            r"\b\d+(?:[.,]\d+)?\s*"
-            r"(?:mg|ml|mcg|µg)\b"
-        )
+        concrete_dose_pattern = r"\b\d+(?:[.,]\d+)?\s*" r"(?:mg|ml|mcg|µg)\b"
 
         if re.search(
             concrete_dose_pattern,
             answer,
             flags=re.IGNORECASE,
         ):
-            reasons.append(
-                "dose_concreta_gerada"
-            )
+            reasons.append("dose_concreta_gerada")
 
-        reasons = list(
-            dict.fromkeys(
-                reasons
-            )
-        )
+        reasons = list(dict.fromkeys(reasons))
 
-        requires_human_review = bool(
-            reasons
-        )
+        if not state.get(
+            "response_consistent",
+            True,
+        ):
+            reasons.append("grounding_inconsistency")
+        requires_human_review = bool(reasons)
+        reasons = list(dict.fromkeys(reasons))
+
+        requires_human_review = bool(reasons)
 
         audit_log(
             {
-                "etapa": (
-                    "langgraph_safety_check"
-                ),
-                "paciente_id": state.get(
-                    "paciente_id"
-                ),
-                "requires_human_review": (
-                    requires_human_review
-                ),
+                "etapa": ("langgraph_safety_check"),
+                "paciente_id": state.get("paciente_id"),
+                "requires_human_review": (requires_human_review),
                 "risk_reasons": reasons,
             }
         )
 
         return {
-            "requires_human_review": (
-                requires_human_review
-            ),
+            "requires_human_review": (requires_human_review),
             "risk_reasons": reasons,
             "status": "SAFETY_CHECKED",
         }
@@ -394,19 +651,13 @@ class MedicalGraphNodes:
         if not self.interactive_review:
             audit_log(
                 {
-                    "etapa": (
-                        "langgraph_human_review_required"
-                    ),
-                    "paciente_id": state.get(
-                        "paciente_id"
-                    ),
+                    "etapa": ("langgraph_human_review_required"),
+                    "paciente_id": state.get("paciente_id"),
                     "motivos": state.get(
                         "risk_reasons",
                         [],
                     ),
-                    "status": (
-                        "PENDING_HUMAN_REVIEW"
-                    ),
+                    "status": ("PENDING_HUMAN_REVIEW"),
                 }
             )
 
@@ -415,27 +666,17 @@ class MedicalGraphNodes:
                 "review_decision": None,
                 "review_notes": None,
                 "delivery_allowed": False,
-                "status": (
-                    "PENDING_HUMAN_REVIEW"
-                ),
+                "status": ("PENDING_HUMAN_REVIEW"),
             }
 
         print()
         print("=" * 60)
-        print(
-            "REVISÃO HUMANA OBRIGATÓRIA"
-        )
+        print("REVISÃO HUMANA OBRIGATÓRIA")
         print("=" * 60)
 
-        print(
-            f"Paciente: "
-            f"{state.get('paciente_id') or 'não informado'}"
-        )
+        print(f"Paciente: " f"{state.get('paciente_id') or 'não informado'}")
 
-        print(
-            "Motivos: "
-            f"{', '.join(state.get('risk_reasons', []))}"
-        )
+        print("Motivos: " f"{', '.join(state.get('risk_reasons', []))}")
 
         print()
         print("Pergunta:")
@@ -469,23 +710,14 @@ class MedicalGraphNodes:
 
         print("=" * 60)
 
-        reviewer_name = input(
-            "Nome do profissional responsável: "
-        ).strip()
+        reviewer_name = input("Nome do profissional responsável: ").strip()
 
         while not reviewer_name:
-            print(
-                "O nome do profissional "
-                "é obrigatório."
-            )
+            print("O nome do profissional " "é obrigatório.")
 
-            reviewer_name = input(
-                "Nome do profissional responsável: "
-            ).strip()
+            reviewer_name = input("Nome do profissional responsável: ").strip()
 
-        decision_input = input(
-            "Decisão [A]provar / [R]ejeitar: "
-        ).strip().lower()
+        decision_input = input("Decisão [A]provar / [R]ejeitar: ").strip().lower()
 
         while decision_input not in {
             "a",
@@ -495,18 +727,11 @@ class MedicalGraphNodes:
             "rejeitar",
             "rejeitado",
         }:
-            print(
-                "Informe A para aprovar "
-                "ou R para rejeitar."
-            )
+            print("Informe A para aprovar " "ou R para rejeitar.")
 
-            decision_input = input(
-                "Decisão [A]provar / [R]ejeitar: "
-            ).strip().lower()
+            decision_input = input("Decisão [A]provar / [R]ejeitar: ").strip().lower()
 
-        review_notes = input(
-            "Observações da revisão: "
-        ).strip()
+        review_notes = input("Observações da revisão: ").strip()
 
         approved = decision_input in {
             "a",
@@ -514,35 +739,17 @@ class MedicalGraphNodes:
             "aprovado",
         }
 
-        review_decision = (
-            "APPROVED"
-            if approved
-            else "REJECTED"
-        )
+        review_decision = "APPROVED" if approved else "REJECTED"
 
-        status = (
-            "HUMAN_APPROVED"
-            if approved
-            else "HUMAN_REJECTED"
-        )
+        status = "HUMAN_APPROVED" if approved else "HUMAN_REJECTED"
 
         audit_log(
             {
-                "etapa": (
-                    "langgraph_human_review_completed"
-                ),
-                "paciente_id": state.get(
-                    "paciente_id"
-                ),
-                "profissional": (
-                    reviewer_name
-                ),
-                "decisao": (
-                    review_decision
-                ),
-                "observacoes": (
-                    review_notes
-                ),
+                "etapa": ("langgraph_human_review_completed"),
+                "paciente_id": state.get("paciente_id"),
+                "profissional": (reviewer_name),
+                "decisao": (review_decision),
+                "observacoes": (review_notes),
                 "motivos_risco": state.get(
                     "risk_reasons",
                     [],
@@ -561,15 +768,9 @@ class MedicalGraphNodes:
         )
 
         return {
-            "reviewer_name": (
-                reviewer_name
-            ),
-            "review_decision": (
-                review_decision
-            ),
-            "review_notes": (
-                review_notes
-            ),
+            "reviewer_name": (reviewer_name),
+            "review_decision": (review_decision),
+            "review_notes": (review_notes),
             "delivery_allowed": approved,
             "status": status,
         }
@@ -580,12 +781,8 @@ class MedicalGraphNodes:
     ) -> dict[str, Any]:
         audit_log(
             {
-                "etapa": (
-                    "langgraph_completed"
-                ),
-                "paciente_id": state.get(
-                    "paciente_id"
-                ),
+                "etapa": ("langgraph_completed"),
+                "paciente_id": state.get("paciente_id"),
                 "modelo": self.model_name,
                 "fontes": state.get(
                     "sources",

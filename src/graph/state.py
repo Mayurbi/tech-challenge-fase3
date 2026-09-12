@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import Any,TypedDict
 
 
 class MedicalAssistantState(
@@ -9,6 +9,7 @@ class MedicalAssistantState(
 ):
     """
     Estado trafegado entre os nós do LangGraph.
+    Responsável: Paola
     """
 
     question: str
@@ -16,6 +17,10 @@ class MedicalAssistantState(
 
     patient_context: str
     protocol_context: str
+    verified_facts: dict[str, Any]
+
+    response_consistent : bool
+    consistency_issues: list[str]
 
     sources: list[str]
 

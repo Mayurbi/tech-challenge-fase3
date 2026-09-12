@@ -14,6 +14,7 @@ class ProntuarioRepository:
 
     Não permite SQL gerado livremente pela LLM.
     As consultas são pré-definidas e parametrizadas.
+    Responsável: Paola
     """
 
     def __init__(

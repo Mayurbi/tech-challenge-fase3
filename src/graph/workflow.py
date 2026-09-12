@@ -16,6 +16,7 @@ from src.graph.state import MedicalAssistantState
 class MedicalAssistantGraph:
     """
     Workflow principal da Frente 3.
+    Responsável: Paola
     """
 
     def __init__(
@@ -78,12 +79,21 @@ class MedicalAssistantGraph:
             "finalize",
             self.nodes.finalize,
         )
+        builder.add_node(
+            "apply_grounding_guardrail",
+            self.nodes.apply_grounding_guardrail,
+        )
 
         builder.add_edge(
             START,
             "validate_input",
         )
 
+        builder.add_node(
+            "validate_grounding",
+            self.nodes.validate_grounding,
+        )
+
         builder.add_edge(
             "validate_input",
             "load_patient_context",
@@ -106,6 +116,16 @@ class MedicalAssistantGraph:
 
         builder.add_edge(
             "generate_answer",
+            "apply_grounding_guardrail",
+        )
+
+        builder.add_edge(
+            "apply_grounding_guardrail",
+            "validate_grounding",
+        )
+
+        builder.add_edge(
+            "validate_grounding",
             "safety_check",
         )
 

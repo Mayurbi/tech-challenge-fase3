@@ -47,6 +47,7 @@ class ProtocolRetriever:
 
     Utiliza BM25Retriever do LangChain para localizar protocolos
     relevantes sem depender de API externa ou banco vetorial.
+    Responsável: Paola
     """
 
     def __init__(
