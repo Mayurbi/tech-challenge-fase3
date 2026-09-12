@@ -8,8 +8,9 @@ V04 - Paciente inexistente: APROVADO
 V05 - Informação ausente: APROVADO
 V06 - Grounding: APROVADO
 V07 - Auditoria: APROVADO
+V08 - Nível de confiança: APROVADO
 
 ------------------------------------------------
-RESULTADO: 7/7 APROVADOS
+RESULTADO: 8/8 APROVADOS
 TAXA DE SUCESSO: 100%
 ------------------------------------------------

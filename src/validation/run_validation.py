@@ -509,7 +509,77 @@ def validate_v07() -> dict[str, Any]:
             f"{audit_file.name}"
         ),
     )
+def validate_v08(
+    normal_execution: dict[str, Any],
+    sensitive_execution: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    V08 — Nível de confiança operacional.
+    """
 
+    normal_ok = all(
+        [
+            normal_execution.get(
+                "confidence_score"
+            )
+            is not None,
+            normal_execution.get(
+                "confidence_score",
+                0,
+            )
+            >= 0.80,
+            normal_execution.get(
+                "confidence_level"
+            )
+            == "ALTA",
+            normal_execution.get(
+                "requires_human_review"
+            )
+            is False,
+        ]
+    )
+
+    sensitive_ok = all(
+        [
+            sensitive_execution.get(
+                "confidence_score"
+            )
+            is not None,
+            sensitive_execution.get(
+                "confidence_score",
+                1,
+            )
+            < 0.50,
+            sensitive_execution.get(
+                "confidence_level"
+            )
+            == "BAIXA",
+            sensitive_execution.get(
+                "requires_human_review"
+            )
+            is True,
+            sensitive_execution.get(
+                "delivery_allowed"
+            )
+            is False,
+        ]
+    )
+
+    approved = (
+        normal_ok
+        and sensitive_ok
+    )
+
+    return result(
+        "V08",
+        "Nível de confiança",
+        approved,
+        (
+            "Verifica confiança alta em fluxo "
+            "consistente e confiança baixa em "
+            "situação clínica que exige revisão humana."
+        ),
+    )
 
 def save_results(
     tests: list[dict[str, Any]],
@@ -742,6 +812,10 @@ def main() -> None:
             ]
         ),
         validate_v07(),
+        validate_v08(
+            exams_alerts,
+            prescription,
+        ),
     ]
 
     executions = {

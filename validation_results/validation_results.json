@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-09-12T15:33:27.921168",
+  "generated_at": "2026-09-12T16:03:58.826861",
   "model": "llama3.2:3b",
   "summary": {
-    "approved": 7,
-    "total": 7,
+    "approved": 8,
+    "total": 8,
     "success_rate": 100.0
   },
   "tests": [
@@ -55,6 +55,13 @@
       "approved": true,
       "status": "APROVADO",
       "details": "Arquivo verificado: audit-20260912.jsonl"
+    },
+    {
+      "id": "V08",
+      "name": "Nível de confiança",
+      "approved": true,
+      "status": "APROVADO",
+      "details": "Verifica confiança alta em fluxo consistente e confiança baixa em situação clínica que exige revisão humana."
     }
   ],
   "executions": {
@@ -98,13 +105,22 @@
       },
       "response_consistent": true,
       "consistency_issues": [],
+      "confidence_score": 1.0,
+      "confidence_level": "ALTA",
+      "confidence_reasons": [
+        "grounding_consistente",
+        "sem_inconsistencias",
+        "status_paciente_verificado",
+        "fontes_recuperadas",
+        "sem_risco_para_entrega_automatica"
+      ],
       "sources": [
         "PROT-ONCO-001",
         "PROT-ONCO-002",
         "PROT-ONCO-005"
       ],
       "prompt": "Você é um assistente de apoio clínico para oncologia,\nespecializado em fornecer informações baseadas em protocolos\ninternos e fatos verificados do prontuário do paciente.\n\nResponda usando SOMENTE os fatos verificados e os protocolos\nfornecidos abaixo.\n\nOs FATOS VERIFICADOS foram obtidos diretamente do banco de dados\ne possuem prioridade sobre qualquer interpretação do modelo.\n\nREGRAS OBRIGATÓRIAS:\n\n1. Não invente dados.\n2. Não transforme um alerta em exame.\n3. Não classifique exame realizado como pendente.\n4. Não diga que determinado exame está pendente há mais de\n30 dias se essa identificação não estiver explícita nos fatos.\n5. Se existir alerta de exame pendente há mais de 30 dias,\ninforme obrigatoriamente:\n- a prioridade do alerta;\n- o código do protocolo associado;\n- a quantidade de exames mencionada no alerta;\n- e, se o alerta não identificar qual exame originou a condição,\n     escreva explicitamente:\n     \"Os dados disponíveis não identificam qual exame pendente\n     originou especificamente este alerta.\"\n6. Cite os códigos dos protocolos utilizados.\n7. Não forneça diagnóstico definitivo.\n8. Não forneça prescrição médica autônoma.\n9. Caso exista informação insuficiente, explique exatamente\nqual informação está ausente.\n10. A decisão clínica final pertence ao médico responsável.\n11. Responda todas as partes da pergunta do usuário.\n12. Não cite protocolos irrelevantes apenas porque foram\n    recuperados pelo sistema.\n\nPERGUNTA:\nQuais exames estão pendentes e existe algum alerta clínico registrado para este paciente?\n\nFATOS VERIFICADOS:\nPaciente confirmado: P0001.\n\nEXAMES PENDENTES VERIFICADOS NO BANCO:\n- Hemograma completo | solicitado=2026-08-02 | protocolo=PROT-ONCO-002\n- Estadiamento por imagem | solicitado=2026-09-10 | protocolo=PROT-ONCO-002\n\nALERTAS VERIFICADOS NO BANCO:\n- tipo=exames_pendentes_30d | prioridade=alta | protocolo=PROT-ONCO-005 | detalhe=1 exame(s) obrigatório(s) pendente(s) há mais de 30 dias\n\nREGRAS DE INTERPRETAÇÃO DOS FATOS:\n- Um alerta NÃO é um exame.\n- Não inferir qual exame está pendente há mais de 30 dias se o alerta não identificar o exame.\n- Não transformar exames realizados em exames pendentes.\n- Não inventar resultados de exames.\n\nPRONTUÁRIO COMPLETO:\nPaciente: P0001\nIdade: 68\nT Stage: T1\nN Stage: N1\nEstágio: IIA\nGrau: 3\nTamanho do tumor: 4 mm\nStatus estrogênio: Positive\nStatus progesterona: Positive\nLinfonodos positivos: 1\n\nEXAMES:\n- Função hepática (TGO/TGP, bilirrubinas) | status=realizado | protocolo=PROT-ONCO-002 | solicitado=2026-07-26 | resultado=2026-07-30\n- Hemograma completo | status=pendente | protocolo=PROT-ONCO-002 | solicitado=2026-08-02 | resultado=None\n- Função renal (creatinina, ureia) | status=realizado | protocolo=PROT-ONCO-002 | solicitado=2026-09-03 | resultado=2026-09-12\n- Ecocardiograma | status=realizado | protocolo=PROT-ONCO-002 | solicitado=2026-09-06 | resultado=2026-09-07\n- Estadiamento por imagem | status=pendente | protocolo=PROT-ONCO-002 | solicitado=2026-09-10 | resultado=None\n\nALERTAS:\n- prioridade=alta | tipo=exames_pendentes_30d | protocolo=PROT-ONCO-005 | 1 exame(s) obrigatório(s) pendente(s) há mais de 30 dias\n\nPROTOCOLOS INTERNOS RECUPERADOS:\n[PROT-ONCO-002] Solicitação de exames pré-tratamento\nSolicitação de exames pré-tratamento\n\nAntes de iniciar tratamento oncológico: hemograma completo, função hepática (TGO/TGP, bilirrubinas), função renal (creatinina, ureia), ecocardiograma se uso previsto de antraciclinas ou trastuzumabe, e estadiamento por imagem conforme estágio clínico. Resultados devem estar no prontuário antes da primeira sessão. Exames pendentes bloqueiam o agendamento e geram alerta à equipe.\n\n[PROT-ONCO-005] Alerta de risco elevado\nAlerta de risco elevado\n\nQuando o modelo preditivo institucional indicar probabilidade de malignidade ou de óbito acima de 70%, ou houver exames obrigatórios pendentes há mais de 30 dias, o sistema deve emitir alerta à equipe médica (mastologista responsável e enfermagem de navegação) com prioridade alta, registrando o alerta em log de auditoria.\n\n[PROT-ONCO-001] Triagem de nódulo mamário palpável\nTriagem de nódulo mamário palpável\n\nPaciente com nódulo palpável: (1) anamnese e exame físico bilateral; (2) mamografia diagnóstica se idade >= 40 anos, ultrassonografia se < 40; (3) classificar por BI-RADS; (4) BI-RADS 4 ou 5 -> encaminhar para biópsia por agulha grossa (core biopsy) em até 15 dias; (5) BI-RADS 3 -> reavaliação em 6 meses; (6) registrar em prontuário e notificar o mastologista responsável.\n\nFONTES:\nPROT-ONCO-001, PROT-ONCO-002, PROT-ONCO-005\n\nINSTRUÇÕES ESPECÍFICAS:\n\nQuando a pergunta envolver exames pendentes:\n\n1. Informe primeiro, de forma objetiva, somente os exames\n   marcados como pendentes nos FATOS VERIFICADOS.\n\n2. Informe qual protocolo está associado a esses exames.\n\n3. Explique objetivamente o que esse protocolo determina\n   para a situação apresentada.\n\n4. Se houver alerta registrado, informe o alerta em uma seção\n   separada. Nunca trate um alerta como exame.\n\n5. Se o alerta informar que existe exame pendente há mais de\n   30 dias, mas não identificar qual exame, deixe isso explícito.\n\n6. Não omita nenhuma parte da pergunta.\n\nResponda em português do Brasil, de forma clara, objetiva e\nbaseada exclusivamente nas informações fornecidas.",
-      "answer": "Para o paciente P0001, os exames pendentes são:\n\n- Hemograma completo | protocolo=PROT-ONCO-002\n- Estadiamento por imagem | protocolo=PROT-ONCO-002\n\nO protocolo PROT-ONCO-002 solicitação de exames pré-tratamento. Esse protocolo determina a realização de exames pré-tratamento, como hemograma completo, função hepática (TGO/TGP, bilirrubinas), função renal (creatinina, ureia), ecocardiograma se uso previsto de antraciclinas ou trastuzumabe, e estadiamento por imagem conforme estágio clínico. Resultados devem estar no prontuário antes da primeira sessão. Exames pendentes bloqueiam o agendamento e geram alerta à equipe.\n\nAlerta registrado:\n\n- prioridade=alta | tipo=exames_pendentes_30d | protocolo=PROT-ONCO-005 | 1 exame(s) obrigatório(s) pendente(s) há mais de 30 dias\n\nO alerta PROT-ONCO-005 Alerta de risco elevado determina que quando o modelo preditivo institucional indicar probabilidade de malignidade ou de óbito acima de 70%, ou houver exames obrigatórios pendentes há mais de 30 dias, o sistema deve emitir alerta à equipe médica (mastologista responsável e enfermagem de navegação) com prioridade alta, registrando o alerta em log de auditoria.\n\n**Observação de segurança:**\nOs dados disponíveis não identificam qual exame pendente originou especificamente este alerta.",
+      "answer": "Para responder à sua pergunta, apresentaremos os exames pendentes e o alerta registrado para o paciente P0001.\n\n**Exames Pendentes:**\n\n- Hemograma completo | protocolo=PROT-ONCO-002\n- Estadiamento por imagem | protocolo=PROT-ONCO-002\n\n**Protocolo PROT-ONCO-002:** Solicitação de exames pré-tratamento\nEste protocolo determina a realização de exames pré-tratamento antes de iniciar tratamento oncológico, incluindo hemograma completo, função hepática (TGO/TGP, bilirrubinas), função renal (creatinina, ureia), ecocardiograma se uso previsto de antraciclinas ou trastuzumabe, e estadiamento por imagem conforme estágio clínico. Resultados devem estar no prontuário antes da primeira sessão. Exames pendentes bloqueiam o agendamento e geram alerta à equipe.\n\n**Alerta:**\n\n- prioridade=alta | tipo=exames_pendentes_30d | protocolo=PROT-ONCO-005 | 1 exame(s) obrigatório(s) pendente(s) há mais de 30 dias\n\n**Alerta PROT-ONCO-005:** Alerta de risco elevado\nEste alerta é emitido quando o modelo preditivo institucional indicar probabilidade de malignidade ou de óbito acima de 70%, ou houver exames obrigatórios pendentes há mais de 30 dias. Neste caso, o sistema registra o alerta em log de auditoria.\n\n**Observação de segurança:**\nOs dados disponíveis não identificam qual exame pendente originou especificamente este alerta.",
       "model_name": "llama3.2:3b",
       "requires_human_review": false,
       "risk_reasons": [],
@@ -151,6 +167,15 @@
       },
       "response_consistent": true,
       "consistency_issues": [],
+      "confidence_score": 0.49,
+      "confidence_level": "BAIXA",
+      "confidence_reasons": [
+        "grounding_consistente",
+        "sem_inconsistencias",
+        "status_paciente_verificado",
+        "fontes_recuperadas",
+        "revisao_humana_obrigatoria"
+      ],
       "sources": [
         "PROT-ONCO-001",
         "PROT-ONCO-004",
@@ -184,6 +209,15 @@
       },
       "response_consistent": true,
       "consistency_issues": [],
+      "confidence_score": 1.0,
+      "confidence_level": "ALTA",
+      "confidence_reasons": [
+        "grounding_consistente",
+        "sem_inconsistencias",
+        "status_paciente_verificado",
+        "fontes_recuperadas",
+        "sem_risco_para_entrega_automatica"
+      ],
       "sources": [
         "PROT-ONCO-001",
         "PROT-ONCO-002",
@@ -237,6 +271,15 @@
       },
       "response_consistent": true,
       "consistency_issues": [],
+      "confidence_score": 1.0,
+      "confidence_level": "ALTA",
+      "confidence_reasons": [
+        "grounding_consistente",
+        "sem_inconsistencias",
+        "status_paciente_verificado",
+        "fontes_recuperadas",
+        "sem_risco_para_entrega_automatica"
+      ],
       "sources": [
         "PROT-ONCO-001",
         "PROT-ONCO-006",

@@ -22,6 +22,10 @@ class MedicalAssistantState(
     response_consistent : bool
     consistency_issues: list[str]
 
+    confidence_score: float
+    confidence_level: str
+    confidence_reasons: list[str]
+
     sources: list[str]
 
     prompt: str

@@ -94,6 +94,11 @@ class MedicalAssistantGraph:
             self.nodes.validate_grounding,
         )
 
+        builder.add_node(
+            "calculate_confidence",
+            self.nodes.calculate_confidence,
+        )
+
         builder.add_edge(
             "validate_input",
             "load_patient_context",
@@ -125,17 +130,19 @@ class MedicalAssistantGraph:
         )
 
         builder.add_edge(
+            "safety_check",
+            "calculate_confidence",
+        )
+        builder.add_edge(
             "validate_grounding",
             "safety_check",
         )
 
         builder.add_conditional_edges(
-            "safety_check",
+            "calculate_confidence",
             self.nodes.route_after_safety,
             {
-                "human_review": (
-                    "human_review"
-                ),
+                "human_review": "human_review",
                 "finalize": "finalize",
             },
         )

@@ -643,6 +643,150 @@ class MedicalGraphNodes:
             "risk_reasons": reasons,
             "status": "SAFETY_CHECKED",
         }
+    def calculate_confidence(
+        self,
+        state: MedicalAssistantState,
+    ) -> dict[str, Any]:
+        """
+        Calcula um índice determinístico de confiança operacional.
+
+        O score não representa probabilidade clínica.
+        Ele mede se a resposta está suficientemente
+        fundamentada e segura para entrega automática.
+
+        Responsável: Paola
+        """
+
+        score = 0.0
+        reasons: list[str] = []
+
+        verified_facts = state.get(
+            "verified_facts",
+            {},
+        )
+
+        sources = state.get(
+            "sources",
+            [],
+        )
+
+        consistency_issues = state.get(
+            "consistency_issues",
+            [],
+        )
+
+        response_consistent = state.get(
+            "response_consistent",
+            False,
+        )
+
+        requires_human_review = state.get(
+            "requires_human_review",
+            False,
+        )
+
+        # Grounding validado.
+        if response_consistent:
+            score += 0.40
+            reasons.append(
+                "grounding_consistente"
+            )
+        else:
+            reasons.append(
+                "grounding_inconsistente"
+            )
+
+        # Ausência de inconsistências.
+        if not consistency_issues:
+            score += 0.15
+            reasons.append(
+                "sem_inconsistencias"
+            )
+        else:
+            reasons.append(
+                "inconsistencias_detectadas"
+            )
+
+        # O sistema conseguiu verificar explicitamente
+        # se o paciente existe ou não no banco.
+        if isinstance(
+            verified_facts.get(
+                "patient_found"
+            ),
+            bool,
+        ):
+            score += 0.15
+            reasons.append(
+                "status_paciente_verificado"
+            )
+
+        # Houve recuperação de fontes internas.
+        if sources:
+            score += 0.10
+            reasons.append(
+                "fontes_recuperadas"
+            )
+        else:
+            reasons.append(
+                "sem_fontes_recuperadas"
+            )
+
+        # Resposta liberada pelo safety check.
+        if not requires_human_review:
+            score += 0.20
+            reasons.append(
+                "sem_risco_para_entrega_automatica"
+            )
+        else:
+            reasons.append(
+                "revisao_humana_obrigatoria"
+            )
+
+            # Uma resposta que exige revisão humana
+            # nunca pode receber confiança alta.
+            score = min(
+                score,
+                0.49,
+            )
+
+        score = round(
+            min(
+                max(
+                    score,
+                    0.0,
+                ),
+                1.0,
+            ),
+            2,
+        )
+
+        if score >= 0.80:
+            level = "ALTA"
+        elif score >= 0.50:
+            level = "MEDIA"
+        else:
+            level = "BAIXA"
+
+        audit_log(
+            {
+                "etapa": (
+                    "langgraph_confidence"
+                ),
+                "paciente_id": state.get(
+                    "paciente_id"
+                ),
+                "confidence_score": score,
+                "confidence_level": level,
+                "confidence_reasons": reasons,
+            }
+        )
+
+        return {
+            "confidence_score": score,
+            "confidence_level": level,
+            "confidence_reasons": reasons,
+            "status": "CONFIDENCE_CALCULATED",
+        }
 
     def human_review(
         self,
